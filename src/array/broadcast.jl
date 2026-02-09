@@ -448,13 +448,13 @@ function _insert_length_one_dims(A::AbstractBasicDimArray, alldims)
         lengths = map(alldims) do d 
             hasdim(A, d) ? size(A, d) : 1
         end
-        newdims = map(alldims) do d 
-            hasdim(A, d) ? dims(A, d) : rebuild(d, Lookups.Length1NoLookup())
+        newdims = map(alldims) do d
+            hasdim(A, d) ? dims(A, d) : rebuild(d, Lookups.Length1NoLookup(), NamedTuple())
         end
     else
         odims = otherdims(alldims, DD.dims(A))
-        lengths = (size(A)..., map(_ -> 1, odims)...) 
-        newdims = (dims(A)..., map(d -> rebuild(d, Lookups.Length1NoLookup()), odims)...)
+        lengths = (size(A)..., map(_ -> 1, odims)...)
+        newdims = (dims(A)..., map(d -> rebuild(d, Lookups.Length1NoLookup(), NamedTuple()), odims)...)
     end
     newdata = reshape(parent(A), lengths)
     A1 = rebuild(A; data=newdata, dims=format(newdims, newdata))

@@ -90,6 +90,11 @@ But read the DimensionalData.jl `show.jl` code for details.
 """
 function show_after(io::IO, mime, A::AbstractBasicDimArray)
     blockwidth = get(io, :blockwidth, 0)
+    # Print extra lookups block before closing if any dims have them
+    has_extra = any(d -> !isempty(d.lookups), dims(A))
+    if has_extra
+        blockwidth = _print_extralookups_block(io, mime, A, blockwidth)
+    end
     print_block_close(io, blockwidth)
     can_show_data(parent(A)) || return
     ndims(A) > 0 && println(io)
@@ -218,6 +223,47 @@ end
 function print_block_close(io, blockwidth)
     closing_line = string('└', '─'^blockwidth, '┘')
     printstyled(io, closing_line; color=:light_black)
+end
+
+function _print_extralookups_block(io, mime, A, blockwidth)
+    displaywidth = displaysize(io)[2]
+    # Calculate content width
+    content_width = 0
+    for (i, d) in enumerate(dims(A))
+        el = d.lookups
+        isempty(el) && continue
+        for (k, v) in pairs(el)
+            w = textwidth(sprint(; context=io) do buf
+                print(buf, "  ")
+                print(buf, k)
+                print(buf, " (")
+                print(buf, name(d))
+                print(buf, ") ")
+                show(IOContext(buf, :compact => true), mime, v)
+            end)
+            content_width = max(content_width, w)
+        end
+    end
+    new_blockwidth = max(blockwidth, min(displaywidth - 2, content_width + 4))
+    new_blockwidth = print_block_separator(io, "coordinates", blockwidth, new_blockwidth; istop=false)
+    println(io)
+    # Print the actual content
+    for (i, d) in enumerate(dims(A))
+        el = d.lookups
+        isempty(el) && continue
+        dc = dimcolor(i)
+        for (k, v) in pairs(el)
+            print(io, "  ")
+            printstyled(io, k; color=dimcolor(7))
+            printstyled(io, " ("; color=:light_black)
+            printstyled(io, name(d); color=dc)
+            printstyled(io, ")"; color=:light_black)
+            print(io, " ")
+            show(IOContext(io, :compact => true), mime, v)
+            println(io)
+        end
+    end
+    return new_blockwidth
 end
 
 # Showing the array is optional for AbstractDimArray

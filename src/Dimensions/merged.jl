@@ -131,9 +131,12 @@ _matches(sel::Where, x) = sel.f(x)
 
 const SelOrStandard = Union{Selector,StandardIndices}
 
-struct Coord{T} <: Dimension{T}
+struct Coord{T,L<:NamedTuple} <: Dimension{T}
     val::T
+    lookups::L
+    Coord{T,L}(val::T, lookups::L) where {T,L<:NamedTuple} = new{T,L}(val, lookups)
 end
+Coord(val, lookups::NamedTuple=NamedTuple()) = Coord{typeof(val),typeof(lookups)}(val, lookups)
 function Coord(val::T, dims::Tuple) where {T<:AbstractVector}
     length(dims) == length(first(val)) || throw(ArgumentError("Number of dims must match number of points"))
     lookup = MergedLookup(val, name2dim(dims))

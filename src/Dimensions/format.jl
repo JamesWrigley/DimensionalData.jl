@@ -57,7 +57,8 @@ _format(dim::Dimension{Colon}, axis::AbstractRange) = rebuild(dim, NoLookup(axes
 function _format(dim::Dimension, axis::AbstractRange)
     newlookup = format(val(dim), basetypeof(dim), axes(axis, 1))
     checkaxis(newlookup, axis)
-    return rebuild(dim, newlookup)
+    newextralookups = _format_extralookups(dim.lookups, basetypeof(dim), axis)
+    return rebuild(dim, newlookup, newextralookups)
 end
 
 format(val::AbstractArray, D::Type, axis::AbstractRange) = format(AutoLookup(), D, val, axis)
@@ -172,3 +173,14 @@ checkaxis(lookup, axis) = first(axes(lookup)) == axis || _checkaxiserror(lookup,
     throw(ArgumentError(
         "Lookup value of `$v` for dimension $D cannot be converted to a `Lookup`. Did you mean to pass a range or array?"
     ))
+
+# Format extra lookups attached to a dimension
+function _format_extralookups(lookups::NamedTuple, D::Type, axis::AbstractRange)
+    map(lookups) do l
+        fl = format(l, D, axes(axis, 1))
+        checkaxis(fl, axis)
+        fl
+    end
+end
+# Empty case — no work
+_format_extralookups(::NamedTuple{(),Tuple{}}, ::Type, ::AbstractRange) = NamedTuple()

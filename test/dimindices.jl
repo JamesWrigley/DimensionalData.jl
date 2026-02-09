@@ -16,7 +16,7 @@ A = zeros(X(4.0:7.0), Y(10.0:12.0))
         @test ds[(X(1),)] == ds[1, :]
     end
 
-    @test eltype(di) == Tuple{X{Int64}, Y{Int64}}
+    @test eltype(di) == Tuple{X{Int64,NamedTuple{(),Tuple{}}}, Y{Int64,NamedTuple{(),Tuple{}}}}
     ci = CartesianIndices(A)
     @test @inferred val.(collect(di)) == Tuple.(collect(ci))
     @test A[di] == view(A, di) == A

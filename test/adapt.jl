@@ -44,6 +44,10 @@ end
     l = AutoLookup()
     l1 = Adapt.adapt(CustomArray, l)
     @test parent(l1) isa AutoValues
+
+    d = X(1:10, (foo=collect(1:10),))
+    d2 = Adapt.adapt(Array, d)
+    @test lookup(d2, :foo) == collect(1:10)
 end
 
 @testset "Dimension" begin

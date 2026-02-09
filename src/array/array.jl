@@ -23,6 +23,7 @@ metadata(::AbstractBasicDimArray) = NoMetadata()
 for func in (:val, :index, :lookup, :order, :sampling, :span, :locus, :bounds, :intervalbounds)
     @eval ($func)(A::AbstractBasicDimArray, args...) = ($func)(dims(A), args...)
 end
+lookup(A::AbstractBasicDimArray, dim, name::Symbol) = lookup(dims(A), dim, name)
 
 Extents.extent(A::AbstractBasicDimArray, args...) = Extents.extent(dims(A), args...) 
 

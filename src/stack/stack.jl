@@ -135,6 +135,7 @@ end
 for func in (:index, :lookup, :metadata, :sampling, :span, :bounds, :locus, :order)
     @eval ($func)(s::AbstractDimStack, args...) = ($func)(dims(s), args...)
 end
+lookup(s::AbstractDimStack, dim, name::Symbol) = lookup(dims(s), dim, name)
 
 Base.parent(s::AbstractDimStack) = data(s)
 # Only compare data and dim - metadata and refdims can be different

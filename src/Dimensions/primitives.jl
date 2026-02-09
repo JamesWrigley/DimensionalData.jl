@@ -500,7 +500,8 @@ function reducedims end
     map(_reducedims, dims, sortdims(map(i -> dims[i], dimstoreduce), dims))
 # Reduce matching dims but ignore nothing vals - they are the dims not being reduced
 @inline _reducedims(dim::Dimension, ::Nothing) = dim
-@inline _reducedims(dim::Dimension, ::DimOrDimType) = rebuild(dim, reducelookup(lookup(dim)))
+@inline _reducedims(dim::Dimension, ::DimOrDimType) =
+    rebuild(dim, reducelookup(lookup(dim)), map(reducelookup, dim.lookups))
 
 const DimTupleOrEmpty = Union{DimTuple,Tuple{}}
 

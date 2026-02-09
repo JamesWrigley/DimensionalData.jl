@@ -30,11 +30,15 @@ end
 _set(dim::Dimension, wrapper::Dimension{<:DimSetters}) =
     _set(_set(dim, basetypeof(wrapper)), val(wrapper))
 # Set the dim, checking the lookup
-_set(dim::Dimension, newdim::Dimension) = _set(newdim, _set(val(dim), val(newdim)))
+function _set(dim::Dimension, newdim::Dimension)
+    newval = _set(val(dim), val(newdim))
+    merged = merge(dim.lookups, newdim.lookups)
+    _set(rebuild(newdim, newval, merged), newval)
+end
 # Construct types
 _set(dim::Dimension, ::Type{T}) where T = _set(dim, T())
 _set(dim::Dimension, key::Symbol) = _set(dim, name2dim(key))
-_set(dim::Dimension, dt::DimType) = basetypeof(dt)(val(dim))
+_set(dim::Dimension, dt::DimType) = basetypeof(dt)(val(dim), dim.lookups)
 _set(dim::Dimension, x) = rebuild(dim; val=_set(val(dim), x))
 # Set the lookup
 # Otherwise pass this on to set fields on the lookup

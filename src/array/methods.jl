@@ -623,7 +623,7 @@ _reverse(dims::Tuple{Vararg{Dimension}}) = map(d -> reverse(d), dims)
 _reverse(dim::Dimension) = reverse(dim)
 
 # Dimension
-Base.reverse(dim::Dimension) = rebuild(dim, reverse(lookup(dim)))
+Base.reverse(dim::Dimension) = rebuild(dim, reverse(lookup(dim)), map(reverse, dim.lookups))
 
 Base.dataids(A::AbstractDimArray) = Base.dataids(parent(A))
 

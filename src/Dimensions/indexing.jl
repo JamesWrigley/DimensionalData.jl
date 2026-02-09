@@ -1,5 +1,8 @@
 @inline Base.getindex(d::Dimension) = val(d)
 
+_slice_extralookups(d::Dimension, i) = map(l -> l[i], d.lookups)
+_slice_extralookups(d::Dimension, ::Colon) = d.lookups
+
 for f in (:getindex, :view, :dotview)
     @eval begin
         # Int and CartesianIndex forward to the parent array
@@ -8,7 +11,7 @@ for f in (:getindex, :view, :dotview)
         end
         @propagate_inbounds function Base.$f(d::Dimension{<:AbstractArray}, i::Union{AbstractArray,Colon,CartesianIndices})
             # AbstractArray/Colon return an AbstractArray - so rebuild the dimension
-            rebuild(d, Base.$f(val(d), i))
+            rebuild(d, Base.$f(val(d), i), _slice_extralookups(d, i))
         end
         # Selector gets processed with `selectindices`
         @propagate_inbounds function Base.$f(d::Dimension{<:AbstractArray}, i::SelectorOrInterval)
@@ -16,12 +19,35 @@ for f in (:getindex, :view, :dotview)
         end
         @propagate_inbounds function Base.$f(d::Dimension{<:AbstractArray}, i)
             x = Base.$f(parent(d), i)
-            x isa AbstractArray ? rebuild(d, x) : x
+            x isa AbstractArray ? rebuild(d, x, _slice_extralookups(d, i)) : x
         end
     end
 end
 
 #### dims2indices ####
+
+# Filter extradims to only those NOT resolvable via any dim's extra lookups
+function _filter_non_extralookup_dims(extradims, dims::DimTuple)
+    filter(extradims) do ed
+        !any(d -> haskey(d.lookups, name(ed)), dims)
+    end
+end
+
+# For a single top-level dim, resolve any matching extra-lookup selectors.
+# Returns Colon() if no match, or the resolved index.
+function _extralookup_index(dim::Dimension, extradims)
+    lkps = dim.lookups
+    isempty(lkps) && return Colon()
+    idx = Colon()
+    for ed in extradims
+        qname = name(ed)
+        if haskey(lkps, qname)
+            el_idx = Lookups.selectindices(lkps[qname], val(ed))
+            idx = idx isa Colon ? el_idx : intersect(idx, el_idx)
+        end
+    end
+    return idx
+end
 
 """
     dims2indices(dim::Dimension, I) => NTuple{Union{Colon,AbstractArray,Int}}
@@ -50,13 +76,15 @@ Convert a `Dimension` or `Selector` `I` to indices of `Int`, `AbstractArray` or 
     multidims = Dimensions.dims(otherdims(dims, I), x -> lookup(x) isa MultiDimensionalLookup && !isempty(Dimensions.dims(x, I)))
     # Warn if any dims from I were not picked up by multidims
     actuallyextradims = otherdims(extradims, x -> any(y -> hasdim(y, x), multidims)) # one way setdiff(extradims, multidims) essentially
-    length(actuallyextradims) > 0 && _extradimswarn(actuallyextradims)
+    # Only warn about dims not resolvable via extra lookups
+    truly_extra = _filter_non_extralookup_dims(actuallyextradims, dims)
+    length(truly_extra) > 0 && _extradimswarn(truly_extra)
     # Run the query for the known one-to-one dimensions
     Isorted = Dimensions.sortdims(I, dims)
-    one_to_one_idxs = split_alignments(dims2indices, unalligned_dims2indices, dims, Isorted) 
+    one_to_one_idxs = split_alignments(dims2indices, unalligned_dims2indices, dims, Isorted)
     # Finally, run the query for the multidimensional dims
     # This is basically doing an Accessors.@set on the full_dim_structure
-    # one_to_one_idxs is capable of indexing the whole dataset, but 
+    # one_to_one_idxs is capable of indexing the whole dataset, but
     # it doesn't know about the merged lookups.  This keeps all one-to-one
     # things the same but injects the solutions to the merged lookups where
     # available and appropriate.
@@ -64,6 +92,8 @@ Convert a `Dimension` or `Selector` `I` to indices of `Int`, `AbstractArray` or 
         # Note that this loop iterates over `dims` so each multidim can only be encountered once
         if hasdim(multidims, dim)
             dims2indices(dim, Dimensions.dims(I, Dimensions.dims(dim)))
+        elseif idx isa Colon
+            _extralookup_index(dim, actuallyextradims)
         else
             idx
         end

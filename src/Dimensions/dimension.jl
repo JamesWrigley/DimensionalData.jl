@@ -159,8 +159,13 @@ val(av::AutoVal) = av.val
 
 Rebuild dim with fields from `dim`, and new fields passed in.
 """
+# 2-arg: propagate existing extra lookups
 function rebuild(dim::D, val) where D <: Dimension
-    ConstructionBase.constructorof(D)(val)
+    ConstructionBase.constructorof(D)(val, dim.lookups)
+end
+# 3-arg: replace extra lookups
+function rebuild(dim::D, val, lookups::NamedTuple) where D <: Dimension
+    ConstructionBase.constructorof(D)(val, lookups)
 end
 
 dims(dim::Union{Dimension,DimType,Val{<:Dimension}}) = dim
@@ -173,6 +178,11 @@ refdims(x) = ()
 
 lookup(dim::Dimension{<:AbstractArray}) = val(dim)
 lookup(dim::Union{DimType,Val{<:Dimension}}) = NoLookup()
+function lookup(dim::Dimension, name::Symbol)
+    lkps = dim.lookups
+    haskey(lkps, name) || throw(ArgumentError("Dimension $(Dimensions.name(dim)) has no extra lookup :$name"))
+    lkps[name]
+end
 
 name(dim::Dimension) = name(typeof(dim))
 name(dim::Val{D}) where D = name(D)
@@ -226,6 +236,9 @@ for f in (:val, :index, :lookup, :metadata, :order, :sampling, :span, :locus, :b
         $f(ds::Tuple, I) = $f(dims(ds, name2dim(I)))
     end
 end
+
+# 3-arg: get an extra lookup by name from a specific dimension
+lookup(ds::Tuple, dim, name::Symbol) = lookup(dims(ds, name2dim(dim)), name)
 
 @inline function selectindices(x, selectors; kw...)
     if dims(x) isa Nothing
@@ -286,7 +299,7 @@ Base.lastindex(d::Dimension{<:AbstractArray}) = lastindex(lookup(d))
 Base.step(d::Dimension) = step(lookup(d))
 Base.Array(d::Dimension{<:AbstractArray}) = collect(lookup(d))
 function Base.:(==)(d1::Dimension, d2::Dimension)
-    basetypeof(d1) == basetypeof(d2) && val(d1) == val(d2)
+    basetypeof(d1) == basetypeof(d2) && val(d1) == val(d2) && d1.lookups == d2.lookups
 end
 
 LookupArrays.ordered_first(d::Dimension{<:AbstractArray}) = ordered_first(lookup(d))
@@ -380,24 +393,24 @@ julia> dim = Dim{:custom}(['a', 'b', 'c'])
 custom ['a', …, 'c']
 ```
 """
-struct Dim{S,T} <: Dimension{T}
+struct Dim{S,T,L<:NamedTuple} <: Dimension{T}
     val::T
-    function Dim{S}(val; kw...) where {S}
-        if length(kw) > 0
-            val = AutoVal(val, values(kw))
-        end
-        new{S,typeof(val)}(val)
-    end
-    function Dim{S}(val::AbstractArray; kw...) where S
-        if length(kw) > 0
-            val = AutoLookup(val, values(kw))
-        end
-        Dim{S,typeof(val)}(val)
-    end
-    function Dim{S,T}(val::T) where {S,T}
-        new{S,T}(val)
-    end
+    lookups::L
+    Dim{S,T,L}(val::T, lookups::L) where {S,T,L<:NamedTuple} = new{S,T,L}(val, lookups)
 end
+function Dim{S}(val; lookups::NamedTuple=NamedTuple(), kw...) where {S}
+    if length(kw) > 0
+        val = AutoVal(val, values(kw))
+    end
+    Dim{S,typeof(val),typeof(lookups)}(val, lookups)
+end
+function Dim{S}(val::AbstractArray; lookups::NamedTuple=NamedTuple(), kw...) where S
+    if length(kw) > 0
+        val = AutoLookup(val, values(kw))
+    end
+    Dim{S,typeof(val),typeof(lookups)}(val, lookups)
+end
+Dim{S}(val, lookups::NamedTuple) where S = Dim{S,typeof(val),typeof(lookups)}(val, lookups)
 Dim{S}() where S = Dim{S}(:)
 
 name(::Type{<:Dim{S}}) where S = S
@@ -412,9 +425,12 @@ name2dim(s::Val{S}) where S = Dim{S}()
 Anonymous dimension. Used when extra dimensions are created,
 such as during transpose of a vector.
 """
-struct AnonDim{T} <: Dimension{T}
+struct AnonDim{T,L<:NamedTuple} <: Dimension{T}
     val::T
+    lookups::L
+    AnonDim{T,L}(val::T, lookups::L) where {T,L<:NamedTuple} = new{T,L}(val, lookups)
 end
+AnonDim(val, lookups::NamedTuple=NamedTuple()) = AnonDim{typeof(val),typeof(lookups)}(val, lookups)
 AnonDim() = AnonDim(Colon())
 AnonDim(val, arg1, args...) = AnonDim(val)
 
@@ -455,22 +471,27 @@ end
 
 function dimmacro(typ, supertype, label::String=string(typ))
     quote
-        Base.@__doc__ struct $typ{T} <: $supertype{T}
+        Base.@__doc__ struct $typ{T,L<:NamedTuple} <: $supertype{T}
             val::T
-            function $typ(val; kw...)
-                if length(kw) > 0
-                    val = $Dimensions.AutoVal(val, values(kw))
-                end
-                new{typeof(val)}(val)
-            end
-            $typ{T}(val::T; kw...) where T = new(val::T)
+            lookups::L
+            $typ{T,L}(val::T, lookups::L) where {T,L<:NamedTuple} = new{T,L}(val, lookups)
         end
-        function $typ(val::AbstractArray; kw...)
+        # User-facing keyword constructor (non-AbstractArray values)
+        function $typ(val; lookups::NamedTuple=NamedTuple(), kw...)
+            if length(kw) > 0
+                val = $Dimensions.AutoVal(val, values(kw))
+            end
+            $typ{typeof(val),typeof(lookups)}(val, lookups)
+        end
+        # User-facing keyword constructor (AbstractArray values)
+        function $typ(val::AbstractArray; lookups::NamedTuple=NamedTuple(), kw...)
             if length(kw) > 0
                 val = $Dimensions.AutoLookup(val, values(kw))
             end
-            $typ{typeof(val)}(val)
+            $typ{typeof(val),typeof(lookups)}(val, lookups)
         end
+        # 2-arg positional: used by rebuild
+        $typ(val, lookups::NamedTuple) = $typ{typeof(val),typeof(lookups)}(val, lookups)
         $typ() = $typ(:)
         $Dimensions.name(::Type{<:$typ}) = $(QuoteNode(Symbol(typ)))
         $Dimensions.name2dim(::Val{$(QuoteNode(typ))}) = $typ()

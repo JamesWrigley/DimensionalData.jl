@@ -32,7 +32,7 @@ function Adapt.adapt_structure(to, l::AbstractCategorical)
 end
 
 # Dimension types
-Adapt.adapt_structure(to, dim::Dimension) = rebuild(dim; val=Adapt.adapt(to, val(dim)))
+Adapt.adapt_structure(to, dim::Dimension) = rebuild(dim, Adapt.adapt(to, val(dim)), map(l -> Adapt.adapt(to, l), dim.lookups))
 
 # DimArray
 function Adapt.adapt_structure(to, A::DD.AbstractDimArray)
